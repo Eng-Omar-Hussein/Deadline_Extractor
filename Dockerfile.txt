@@ -1,0 +1,38 @@
+# Use a lightweight, stable Python runtime base
+FROM python:3.11-slim
+
+# Set system environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8080
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install minimal system utilities required for specific wheel compilations
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 1. Copy only requirements first to leverage Docker layer caching
+COPY requirements.txt .
+
+# CRITICAL: Upgrade pip and install the lightweight CPU-only version of PyTorch first.
+# This prevents pip from downloading the 4GB NVIDIA/CUDA binaries.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install the rest of the Hugging Face and API dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 2. Explicitly copy the ONNX model directory into the container
+COPY model/ ./model/
+
+# 3. Explicitly copy the application code
+COPY main.py .
+
+# Expose the API port
+EXPOSE 8080
+
+# Run the application using Uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
